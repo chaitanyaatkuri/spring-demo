@@ -1,5 +1,6 @@
 package com.cs.controllers;
 
+import org.hibernate.annotations.common.util.impl.Log;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
@@ -9,9 +10,11 @@ import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
 import com.cs.handlers.BaseException;
+import com.cs.models.Customers;
 import com.cs.models.Engineers;
 import com.cs.models.GenericResponse;
 import com.cs.repository.CallQueryRepository;
+import com.cs.repository.CustomerRepository;
 import com.cs.repository.EngineerRepository;
 import com.cs.types.Role;
 
@@ -23,8 +26,10 @@ public class UserController {
 	private CallQueryRepository callRepository;
 	@Autowired
 	private EngineerRepository engineerRepository;
+	@Autowired
+	private CustomerRepository customerRepository;
 
-	@RequestMapping(value = "/signup-user", method = RequestMethod.POST)
+	@RequestMapping(value = "/signup-engineer", method = RequestMethod.POST)
 	public ResponseEntity<GenericResponse> saveInfo(@RequestParam String userName, @RequestParam String userPassword,
 			@RequestParam Role userRole, @RequestParam String userFullName, @RequestParam long userContact,
 			@RequestParam(value = "pushToken", required = false, defaultValue = "null") String pushToken) {
@@ -61,9 +66,9 @@ public class UserController {
 		return engineerRepository.doesUserExists(userName);
 	}
 
-	@RequestMapping(value = "/login-user", method = RequestMethod.POST)
-	public ResponseEntity<GenericResponse> loginUser(@RequestParam String userName, @RequestParam String userPassword,
-			@RequestParam boolean isAndroid,
+	@RequestMapping(value = "/login-engineer", method = RequestMethod.POST)
+	public ResponseEntity<GenericResponse> loginEngineer(@RequestParam String userName,
+			@RequestParam String userPassword, @RequestParam boolean isAndroid,
 			@RequestParam(value = "pushToken", required = false, defaultValue = "null") String pushToken) {
 
 		GenericResponse response = new GenericResponse();
@@ -82,7 +87,11 @@ public class UserController {
 				} else {
 					// Get previous pushTokens and append the current.
 					String prevPushTokens = engineerRepository.getPushToken(userName);
-					if (!prevPushTokens.equals(pushToken)) { //Update only if pushToken is different
+					if (!prevPushTokens.equals(pushToken)) { // Update only
+																// if
+																// pushToken
+																// is
+																// different
 						if (prevPushTokens != null && !prevPushTokens.equals("null")) {
 							prevPushTokens = prevPushTokens + "," + pushToken;
 						} else {
@@ -95,6 +104,91 @@ public class UserController {
 					return new ResponseEntity<>(response, HttpStatus.OK);
 				}
 			}
+		} catch (Exception e) {
+			throw new BaseException("User login failed because of incorrect entries, Pls recheck.");
+		}
+	}
+
+	@RequestMapping(value = "/login-user", method = RequestMethod.POST)
+	public ResponseEntity<GenericResponse> loginUser(@RequestParam long userContact, @RequestParam boolean isAndroid,
+			@RequestParam(value = "pushToken", required = false, defaultValue = "null") String pushToken) {
+
+		// Here we have two conditions, where the user can be an existing user
+		// or a new user.
+
+		GenericResponse response = new GenericResponse();
+
+		try {
+
+			if (customerRepository.doesUserExists(userContact) == 0) {
+				// Now, the user is a new user, so ask user for his details.
+				response.setStatus(false);
+				response.setMsg("Success! Please provide following details to continue..");
+				return new ResponseEntity<>(response, HttpStatus.OK);
+			} else {
+				// User is validated, now if android save the pushToken.
+				if (!isAndroid || pushToken == null || pushToken.equals("null")) {
+					response.setStatus(true);
+					response.setMsg("Success! Please enter the OTP sent to your registered mobile number");
+					return new ResponseEntity<>(response, HttpStatus.OK);
+				} else {
+					// Get previous pushTokens and append the current.
+					String prevPushTokens = customerRepository.getPushToken(userContact);
+					if (!prevPushTokens.equals(pushToken)) {
+						// Update only if pushToken is different
+						if (prevPushTokens != null && !prevPushTokens.equals("null")) {
+							prevPushTokens = prevPushTokens + "," + pushToken;
+						} else {
+							prevPushTokens = pushToken;
+						}
+						customerRepository.addPushToken(userContact, prevPushTokens);
+					}
+					response.setStatus(true);
+					response.setMsg("Success! Please enter the OTP sent to your registered mobile number");
+					return new ResponseEntity<>(response, HttpStatus.OK);
+				}
+			}
+		} catch (Exception e) {
+			throw new BaseException("User login failed because of incorrect entries, Pls recheck.");
+		}
+	}
+
+	@RequestMapping(value = "/login-user-details", method = RequestMethod.POST)
+	public ResponseEntity<GenericResponse> loginUserDetails(@RequestParam String userName,
+			@RequestParam long userContact, @RequestParam boolean isAndroid, @RequestParam String pushToken,
+			@RequestParam String userEmail) {
+
+		GenericResponse response = new GenericResponse();
+
+		try {
+			// Get previous pushTokens and append the current.
+			String prevPushTokens = null;
+			try {
+				prevPushTokens = customerRepository.getPushToken(userContact);
+			} catch (Exception e) {
+				throw new BaseException("" + e);
+			}
+			try {
+				if (prevPushTokens != null && !prevPushTokens.equals("null")) {
+					if (!prevPushTokens.equals(pushToken)) {
+						prevPushTokens = prevPushTokens + "," + pushToken;
+					}
+				} else {
+					prevPushTokens = pushToken;
+				}
+			} catch (Exception e) {
+				throw new BaseException("" + e);
+			}
+			try {
+				// Now save the customer information to DB.
+				Customers customer = new Customers(userName, userContact, userEmail, false, prevPushTokens);
+				customerRepository.save(customer);
+			} catch (Exception e) {
+				throw new BaseException("" + e);
+			}
+			response.setStatus(true);
+			response.setMsg("Success! Please enter the OTP sent to your registered mobile number");
+			return new ResponseEntity<>(response, HttpStatus.OK);
 		} catch (Exception e) {
 			throw new BaseException("User login failed because of incorrect entries, Pls recheck.");
 		}
